@@ -7,7 +7,24 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 async function createUserData(userId, displayName) {
     try {
         console.log('Attempting to insert user data:', { userId, displayName });
-        
+
+        // Checa se já existe
+        const { data: existing, error: checkError } = await supabase
+            .from('usersData')
+            .select('id')
+            .eq('user_id_reg', userId)
+            .single();
+
+        if (existing) {
+            console.log('User data already exists, skipping insert.');
+            return { data: existing, alreadyExists: true };
+        }
+        if (checkError && checkError.code !== 'PGRST116') {
+            console.error('Error checking user data existence:', checkError);
+            return { error: checkError };
+        }
+
+        // Se não existe, insere
         const { data, error } = await supabase
             .from('usersData')
             .insert({
