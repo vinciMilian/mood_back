@@ -145,11 +145,72 @@ async function getSignedUrl(fileName, bucketName = 'post-images', expiresIn = 36
     }
 }
 
+// Upload user profile image
+async function uploadUserProfileImage(file, userId, bucketName = 'user_image') {
+    try {
+        // Generate unique filename for profile image
+        const timestamp = Date.now();
+        const fileExtension = file.originalname ? file.originalname.split('.').pop() : 'jpg';
+        const fileName = `profile_${userId}_${timestamp}.${fileExtension}`;
+        
+        console.log('Uploading user profile image:', { fileName, userId, bucketName });
+        
+        const { data, error } = await supabase.storage
+            .from(bucketName)
+            .upload(fileName, file, {
+                cacheControl: '3600',
+                upsert: true // Allow overwriting existing profile images
+            });
+
+        if (error) {
+            console.error('Error uploading user profile image:', error);
+            return { error };
+        }
+
+        console.log('User profile image uploaded successfully:', data);
+        return { data, fileName };
+    } catch (error) {
+        console.error('Error in uploadUserProfileImage:', error);
+        return { error };
+    }
+}
+
+// Get user profile image URL
+async function getUserProfileImageUrl(fileName, bucketName = 'user_image') {
+    try {
+        console.log('Getting user profile image URL:', { fileName, bucketName });
+        
+        // Try to get signed URL first (more reliable)
+        const { data: signedData, error: signedError } = await supabase.storage
+            .from(bucketName)
+            .createSignedUrl(fileName, 3600); // 1 hour expiry
+
+        if (signedError) {
+            console.log('Signed URL failed, trying public URL:', signedError);
+            // Fallback to public URL
+            const { data } = supabase.storage
+                .from(bucketName)
+                .getPublicUrl(fileName);
+            
+            console.log('Public URL generated:', data.publicUrl);
+            return { url: data.publicUrl };
+        }
+
+        console.log('Signed URL generated:', signedData.signedUrl);
+        return { url: signedData.signedUrl };
+    } catch (error) {
+        console.error('Error in getUserProfileImageUrl:', error);
+        return { error };
+    }
+}
+
 module.exports = {
     uploadImage,
     getImageUrl,
     deleteImage,
     listImages,
     uploadImageWithUniqueName,
-    getSignedUrl
+    getSignedUrl,
+    uploadUserProfileImage,
+    getUserProfileImageUrl
 };

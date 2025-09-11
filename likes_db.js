@@ -1,6 +1,7 @@
 const { createClient } = require('@supabase/supabase-js');
 const { SUPABASE_URL, SUPABASE_KEY } = require('./connect');
-const { getUserData } = require('./users_db');
+const { getUserData, getUserDataById } = require('./users_db');
+const { sendLikeNotification } = require('./email_service');
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
@@ -90,6 +91,9 @@ async function likePost(postId, userId) {
 
         // Update likes count in posts table
         await updatePostLikesCount(normalizedPostId);
+
+        // Send email notification to post owner
+        await sendLikeNotificationToOwner(normalizedPostId, internalUserId);
 
         console.log('Post liked successfully:', data);
         return { data, liked: true };
@@ -237,6 +241,66 @@ async function updatePostLikesCount(postId) {
         }
     } catch (error) {
         console.error('Error in updatePostLikesCount:', error);
+    }
+}
+
+// Send like notification to post owner
+async function sendLikeNotificationToOwner(postId, likerUserId) {
+    try {
+        // Get post details
+        const { data: post, error: postError } = await supabase
+            .from('posts')
+            .select('*')
+            .eq('id', postId)
+            .single();
+
+        if (postError || !post) {
+            console.error('Error fetching post for notification:', postError);
+            return;
+        }
+
+        // Get post owner details
+        const postOwnerResult = await getUserDataById(post.post_id_user);
+        if (postOwnerResult.error || !postOwnerResult.data) {
+            console.error('Error fetching post owner for notification:', postOwnerResult.error);
+            return;
+        }
+
+        // Get liker details
+        const likerResult = await getUserDataById(likerUserId);
+        if (likerResult.error || !likerResult.data) {
+            console.error('Error fetching liker for notification:', likerResult.error);
+            return;
+        }
+
+        // Don't send notification if user likes their own post
+        if (post.post_id_user === likerUserId) {
+            console.log('User liked their own post, skipping notification');
+            return;
+        }
+
+        // Get post owner's email from auth
+        const { data: { user }, error: authError } = await supabase.auth.admin.getUserById(postOwnerResult.data.user_id_reg);
+        if (authError || !user || !user.email) {
+            console.error('Error fetching post owner email:', authError);
+            return;
+        }
+
+        // Send email notification
+        const emailResult = await sendLikeNotification(
+            user.email,
+            postOwnerResult.data.displayName,
+            likerResult.data.displayName,
+            post.description
+        );
+
+        if (emailResult.error) {
+            console.error('Error sending like notification email:', emailResult.error);
+        } else {
+            console.log('Like notification email sent successfully');
+        }
+    } catch (error) {
+        console.error('Error in sendLikeNotificationToOwner:', error);
     }
 }
 

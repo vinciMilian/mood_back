@@ -1,5 +1,7 @@
 const { createClient } = require('@supabase/supabase-js');
 const { SUPABASE_URL, SUPABASE_KEY } = require('./connect');
+const { getUserDataById } = require('./users_db');
+const { sendCommentNotification } = require('./email_service');
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
@@ -54,6 +56,9 @@ async function createComment(postId, userId, commentText) {
 
         // Update comments count in posts table
         await updatePostCommentsCount(normalizedPostId);
+
+        // Send email notification to post owner
+        await sendCommentNotificationToOwner(normalizedPostId, internalUserId, commentText);
 
         console.log('Comment created successfully:', data);
         return { data };
@@ -228,6 +233,67 @@ async function updatePostCommentsCount(postId) {
         }
     } catch (error) {
         console.error('Error in updatePostCommentsCount:', error);
+    }
+}
+
+// Send comment notification to post owner
+async function sendCommentNotificationToOwner(postId, commenterUserId, commentText) {
+    try {
+        // Get post details
+        const { data: post, error: postError } = await supabase
+            .from('posts')
+            .select('*')
+            .eq('id', postId)
+            .single();
+
+        if (postError || !post) {
+            console.error('Error fetching post for notification:', postError);
+            return;
+        }
+
+        // Get post owner details
+        const postOwnerResult = await getUserDataById(post.post_id_user);
+        if (postOwnerResult.error || !postOwnerResult.data) {
+            console.error('Error fetching post owner for notification:', postOwnerResult.error);
+            return;
+        }
+
+        // Get commenter details
+        const commenterResult = await getUserDataById(commenterUserId);
+        if (commenterResult.error || !commenterResult.data) {
+            console.error('Error fetching commenter for notification:', commenterResult.error);
+            return;
+        }
+
+        // Don't send notification if user comments on their own post
+        if (post.post_id_user === commenterUserId) {
+            console.log('User commented on their own post, skipping notification');
+            return;
+        }
+
+        // Get post owner's email from auth
+        const { data: { user }, error: authError } = await supabase.auth.admin.getUserById(postOwnerResult.data.user_id_reg);
+        if (authError || !user || !user.email) {
+            console.error('Error fetching post owner email:', authError);
+            return;
+        }
+
+        // Send email notification
+        const emailResult = await sendCommentNotification(
+            user.email,
+            postOwnerResult.data.displayName,
+            commenterResult.data.displayName,
+            commentText,
+            post.description
+        );
+
+        if (emailResult.error) {
+            console.error('Error sending comment notification email:', emailResult.error);
+        } else {
+            console.log('Comment notification email sent successfully');
+        }
+    } catch (error) {
+        console.error('Error in sendCommentNotificationToOwner:', error);
     }
 }
 

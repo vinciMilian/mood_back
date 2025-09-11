@@ -109,6 +109,49 @@ async function updateUserData(userId, updateData) {
     }
 }
 
+// Update user profile image
+async function updateUserProfileImage(userId, imageBucketPath) {
+    try {
+        const { data, error } = await supabase
+            .from('usersData')
+            .update({ user_image_bucket: imageBucketPath })
+            .eq('user_id_reg', userId)
+            .select()
+            .single();
+
+        if (error) {
+            console.error('Error updating user profile image:', error);
+            return { error };
+        }
+
+        return { data };
+    } catch (error) {
+        console.error('Error in updateUserProfileImage:', error);
+        return { error };
+    }
+}
+
+// Get user data by internal ID (for notifications)
+async function getUserDataById(internalId) {
+    try {
+        const { data, error } = await supabase
+            .from('usersData')
+            .select('*')
+            .eq('id', internalId)
+            .single();
+
+        if (error) {
+            console.error('Error fetching user data by ID:', error);
+            return { error };
+        }
+
+        return { data };
+    } catch (error) {
+        console.error('Error in getUserDataById:', error);
+        return { error };
+    }
+}
+
 // Update display name
 async function updateDisplayName(userId, displayName) {
     try {
@@ -177,6 +220,8 @@ module.exports = {
     getUserData,
     getAllUsersData,
     updateUserData,
+    updateUserProfileImage,
+    getUserDataById,
     updateDisplayName,
     deleteUserData,
     userDataExists

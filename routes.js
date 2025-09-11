@@ -1,6 +1,23 @@
+console.log('routes.js carregado');
 
 const express = require('express');
 const router = express.Router();
+
+// Get upload from app (set in server.js)
+const upload = require('multer')({
+    storage: require('multer').memoryStorage(),
+    limits: {
+        fileSize: 5 * 1024 * 1024 // 5MB limit
+    },
+    fileFilter: (req, file, cb) => {
+        // Check if file is an image
+        if (file.mimetype.startsWith('image/')) {
+            cb(null, true);
+        } else {
+            cb(new Error('Only image files are allowed!'), false);
+        }
+    }
+});
 
 // Shared Supabase client (no user auth) for public queries like trending, search, etc.
 const { createClient } = require('@supabase/supabase-js');
@@ -83,13 +100,14 @@ try {
 }
 
 // Import users_db functions
-let getUserData, createUserData, getAllUsersData, updateUserData, updateDisplayName, deleteUserData;
+let getUserData, createUserData, getAllUsersData, updateUserData, updateUserProfileImage, updateDisplayName, deleteUserData;
 try {
     const usersDbModule = require('./users_db');
     getUserData = usersDbModule.getUserData;
     createUserData = usersDbModule.createUserData;
     getAllUsersData = usersDbModule.getAllUsersData;
     updateUserData = usersDbModule.updateUserData;
+    updateUserProfileImage = usersDbModule.updateUserProfileImage;
     updateDisplayName = usersDbModule.updateDisplayName;
     deleteUserData = usersDbModule.deleteUserData;
 } catch (error) {
@@ -140,15 +158,28 @@ try {
 }
 
 // Import storage_db functions
-let uploadImage, getImageUrl, deleteImage, uploadImageWithUniqueName;
+let uploadImage, getImageUrl, deleteImage, uploadImageWithUniqueName, uploadUserProfileImage, getUserProfileImageUrl;
 try {
     const storageDbModule = require('./storage_db');
     uploadImage = storageDbModule.uploadImage;
     getImageUrl = storageDbModule.getImageUrl;
     deleteImage = storageDbModule.deleteImage;
     uploadImageWithUniqueName = storageDbModule.uploadImageWithUniqueName;
+    uploadUserProfileImage = storageDbModule.uploadUserProfileImage;
+    getUserProfileImageUrl = storageDbModule.getUserProfileImageUrl;
 } catch (error) {
     console.error('Error importing storage_db module:', error);
+}
+
+// Import email service functions
+let sendLikeNotification, sendCommentNotification, testEmailConfiguration;
+try {
+    const emailModule = require('./email_service');
+    sendLikeNotification = emailModule.sendLikeNotification;
+    sendCommentNotification = emailModule.sendCommentNotification;
+    testEmailConfiguration = emailModule.testEmailConfiguration;
+} catch (error) {
+    console.error('Error importing email_service module:', error);
 }
 
 // Basic test endpoint
@@ -276,10 +307,25 @@ router.get('/user', async (req, res) => {
         // Get user data again (either existing or newly created)
         const finalUserDataResult = await getUserData(user.id);
         
+        let userData = finalUserDataResult.data || null;
+        
+        // Se houver imagem de perfil, gera signed URL
+        if (userData && userData.user_image_bucket) {
+            try {
+                const { getUserProfileImageUrl } = require('./storage_db');
+                const imageUrlResult = await getUserProfileImageUrl(userData.user_image_bucket, 'user_image');
+                userData.user_image_url = imageUrlResult && imageUrlResult.url ? imageUrlResult.url : null;
+            } catch (e) {
+                userData.user_image_url = null;
+            }
+        } else if (userData) {
+            userData.user_image_url = null;
+        }
+        
         // Combine auth user data with usersData
         const userWithData = {
             ...user,
-            userData: finalUserDataResult.data || null
+            userData: userData
         };
 
         res.status(200).json({
@@ -331,7 +377,9 @@ router.get('/test/ping', (req, res) => {
             timestamp: new Date().toISOString(),
             env: {
                 SUPABASE_URL: process.env.SUPABASE_URL ? 'Set' : 'Not set',
-                SUPABASE_KEY: process.env.SUPABASE_KEY ? 'Set' : 'Not set'
+                SUPABASE_KEY: process.env.SUPABASE_KEY ? 'Set' : 'Not set',
+                EMAIL_USER: process.env.EMAIL_USER ? 'Set' : 'Not set',
+                EMAIL_PASS: process.env.EMAIL_PASS ? 'Set' : 'Not set'
             }
         });
     } catch (error) {
@@ -339,6 +387,138 @@ router.get('/test/ping', (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Error in ping endpoint',
+            error: error.message
+        });
+    }
+});
+
+// Test endpoint to check email configuration
+router.get('/test/email-config', async (req, res) => {
+    try {
+        console.log('Email config test endpoint called');
+        
+        if (!testEmailConfiguration) {
+            return res.status(500).json({
+                success: false,
+                message: 'Email service not available'
+            });
+        }
+
+        const result = await testEmailConfiguration();
+        
+        if (result.error) {
+            return res.status(500).json({
+                success: false,
+                message: 'Email configuration test failed',
+                error: result.error
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: 'Email configuration is working!',
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        console.error('Error in email config test endpoint:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error testing email configuration',
+            error: error.message
+        });
+    }
+});
+
+// Test endpoint for simple upload (no auth)
+router.post('/test/upload-simple', upload.single('image'), async (req, res) => {
+    try {
+        console.log('Simple upload test called');
+        console.log('Request body:', req.body);
+        console.log('Request file:', req.file);
+        
+        if (!req.file) {
+            return res.status(400).json({
+                success: false,
+                message: 'No file provided'
+            });
+        }
+
+        console.log('File details:', {
+            originalname: req.file.originalname,
+            mimetype: req.file.mimetype,
+            size: req.file.size
+        });
+
+        // Test upload to user_image bucket
+        const testFileName = `test_${Date.now()}.jpg`;
+        const { data, error } = await supabase.storage
+            .from('user_image')
+            .upload(testFileName, req.file, {
+                cacheControl: '3600',
+                upsert: true
+            });
+
+        if (error) {
+            console.error('Upload error:', error);
+            return res.status(500).json({
+                success: false,
+                message: 'Upload failed',
+                error: error
+            });
+        }
+
+        console.log('Upload successful:', data);
+        res.status(200).json({
+            success: true,
+            message: 'Upload test successful',
+            data: data
+        });
+    } catch (error) {
+        console.error('Test upload error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Test upload failed',
+            error: error.message
+        });
+    }
+});
+
+// Test endpoint to check storage buckets
+router.get('/test/storage-buckets', async (req, res) => {
+    try {
+        console.log('Storage buckets test endpoint called');
+        
+        // List all buckets
+        const { data: buckets, error } = await supabase.storage.listBuckets();
+        
+        if (error) {
+            console.error('Error listing buckets:', error);
+            return res.status(500).json({
+                success: false,
+                message: 'Error listing storage buckets',
+                error: error
+            });
+        }
+
+        console.log('Available buckets:', buckets);
+        
+        // Check if user_image bucket exists
+        const userImageBucket = buckets.find(bucket => bucket.name === 'user_image');
+        
+        res.status(200).json({
+            success: true,
+            message: 'Storage buckets test completed',
+            data: {
+                buckets: buckets,
+                userImageBucketExists: !!userImageBucket,
+                userImageBucket: userImageBucket
+            }
+        });
+    } catch (error) {
+        console.error('Error in storage buckets test endpoint:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error testing storage buckets',
             error: error.message
         });
     }
@@ -478,6 +658,201 @@ router.delete('/user-data/:userId', async (req, res) => {
     }
 });
 
+// ==================== USER PROFILE ROUTES ====================
+
+// Get user profile by user ID
+router.get('/profile/:userId', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        
+        const result = await getUserData(userId);
+        
+        if (result.error) {
+            return res.status(404).json({
+                success: false,
+                message: 'User profile not found',
+                error: result.error
+            });
+        }
+
+        let userData = result.data;
+        // Se houver imagem de perfil, gera signed URL
+        if (userData && userData.user_image_bucket) {
+            try {
+                const imageUrlResult = await getUserProfileImageUrl(userData.user_image_bucket, 'user_image');
+                userData.user_image_url = imageUrlResult && imageUrlResult.url ? imageUrlResult.url : null;
+            } catch (e) {
+                userData.user_image_url = null;
+            }
+        } else {
+            userData.user_image_url = null;
+        }
+        res.status(200).json({
+            success: true,
+            data: userData
+        });
+    } catch (error) {
+        console.error('Get user profile error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error'
+        });
+    }
+});
+
+// Upload user profile image
+router.post('/profile/upload-image', upload.single('image'), async (req, res) => {
+    try {
+        console.log('=== UPLOAD ROUTE CALLED ===');
+        console.log('Headers:', req.headers);
+        console.log('Body:', req.body);
+        console.log('File:', req.file);
+        
+        // Get user from token
+        const authHeader = req.headers['authorization'];
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            console.error('No auth header:', authHeader);
+            return res.status(401).json({
+                success: false,
+                message: 'Authorization header missing or malformed'
+            });
+        }
+        
+        const accessToken = authHeader.split(' ')[1];
+        console.log('Access token:', accessToken ? 'Present' : 'Missing');
+        
+        const { createClient } = require('@supabase/supabase-js');
+        const { SUPABASE_URL, SUPABASE_KEY } = require('./connect');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
+            global: { headers: { Authorization: `Bearer ${accessToken}` } }
+        });
+
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        if (authError || !user) {
+            console.error('Auth error:', authError);
+            return res.status(401).json({
+                success: false,
+                message: 'Invalid or expired token',
+                error: authError
+            });
+        }
+
+        console.log('User authenticated:', user.id);
+
+        // Check if file was uploaded
+        if (!req.file) {
+            console.error('No file in request:', req.body, req.headers);
+            return res.status(400).json({
+                success: false,
+                message: 'No image file provided'
+            });
+        }
+
+        console.log('File received:', {
+            originalname: req.file.originalname,
+            mimetype: req.file.mimetype,
+            size: req.file.size
+        });
+
+        // Direct upload to Supabase (bypassing the function for now)
+        const timestamp = Date.now();
+        const fileExtension = req.file.originalname ? req.file.originalname.split('.').pop() : 'jpg';
+        const fileName = `profile_${user.id}_${timestamp}.${fileExtension}`;
+        
+        console.log('Uploading to Supabase with filename:', fileName);
+        
+        const { data: uploadData, error: uploadError } = await supabase.storage
+            .from('user_image')
+            .upload(fileName, req.file.buffer, {
+                cacheControl: '3600',
+                upsert: true
+            });
+
+        if (uploadError) {
+            console.error('Supabase upload error:', uploadError);
+            return res.status(500).json({
+                success: false,
+                message: 'Error uploading image',
+                error: uploadError
+            });
+        }
+        
+        console.log('Supabase upload successful:', uploadData);
+
+        // Update user profile with image path
+        const updateResult = await updateUserProfileImage(user.id, fileName);
+        
+        if (updateResult.error) {
+            console.error('Update profile error:', updateResult.error);
+            return res.status(500).json({
+                success: false,
+                message: 'Error updating profile image',
+                error: updateResult.error
+            });
+        }
+
+        console.log('Profile updated successfully');
+
+        // Get the image URL
+        const imageUrlResult = await getUserProfileImageUrl(fileName, 'user_image');
+        
+        console.log('Image URL result:', imageUrlResult);
+        
+        res.status(200).json({
+            success: true,
+            message: 'Profile image uploaded successfully',
+            data: {
+                fileName: fileName,
+                imageUrl: imageUrlResult.url,
+                userData: updateResult.data
+            }
+        });
+    } catch (error) {
+        console.error('Upload profile image error (catch):', error);
+        if (error && error.stack) console.error('Error stack:', error.stack);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error',
+            error: error && error.message ? error.message : error
+        });
+    }
+});
+
+// Get user profile image URL
+router.get('/profile/image/:fileName', async (req, res) => {
+    try {
+        const { fileName } = req.params;
+        
+        if (!fileName) {
+            return res.status(400).json({
+                success: false,
+                message: 'File name is required'
+            });
+        }
+
+        const result = await getUserProfileImageUrl(fileName, 'user_image');
+        
+        if (result.error) {
+            return res.status(500).json({
+                success: false,
+                message: 'Error getting profile image URL',
+                error: result.error
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            data: { url: result.url }
+        });
+    } catch (error) {
+        console.error('Get profile image URL error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error'
+        });
+    }
+});
+
 // ==================== POSTS ROUTES ====================
 
 // Get posts with pagination
@@ -495,13 +870,25 @@ router.get('/posts', async (req, res) => {
             });
         }
 
+        // Adiciona user_image_url para cada post
+        const postsWithProfileUrl = await Promise.all(result.data.map(async (post) => {
+            let user_image_url = null;
+            if (post.usersData && post.usersData.user_id_reg && post.usersData.user_image_bucket) {
+                try {
+                    const { getUserProfileImageUrl } = require('./storage_db');
+                    const imageResult = await getUserProfileImageUrl(post.usersData.user_image_bucket, 'user_image');
+                    user_image_url = imageResult && imageResult.url ? imageResult.url : null;
+                } catch (e) { user_image_url = null; }
+            }
+            return { ...post, user_image_url };
+        }));
         res.status(200).json({
             success: true,
-            data: result.data,
+            data: postsWithProfileUrl,
             pagination: {
                 limit: parseInt(limit),
                 offset: parseInt(offset),
-                hasMore: result.data.length === parseInt(limit)
+                hasMore: postsWithProfileUrl.length === parseInt(limit)
             }
         });
     } catch (error) {
@@ -696,9 +1083,20 @@ router.get('/posts/:postId', async (req, res) => {
             });
         }
 
+        // Adiciona user_image_url ao post
+        let postData = result.data;
+        let user_image_url = null;
+        if (postData.usersData && postData.usersData.user_id_reg && postData.usersData.user_image_bucket) {
+            try {
+                const { getUserProfileImageUrl } = require('./storage_db');
+                const imageResult = await getUserProfileImageUrl(postData.usersData.user_image_bucket, 'user_image');
+                user_image_url = imageResult && imageResult.url ? imageResult.url : null;
+            } catch (e) { user_image_url = null; }
+        }
+        postData.user_image_url = user_image_url;
         res.status(200).json({
             success: true,
-            data: result.data
+            data: postData
         });
     } catch (error) {
         console.error('Get post error:', error);

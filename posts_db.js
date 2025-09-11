@@ -44,7 +44,8 @@ async function getPosts(limit = 10, offset = 0) {
                 *,
                 usersData!posts_post_id_user_fkey (
                     displayName,
-                    user_id_reg
+                    user_id_reg,
+                    user_image_bucket
                 )
             `)
             .order('created_at', { ascending: false })
@@ -74,7 +75,8 @@ async function getPostsByUser(userId, limit = 10, offset = 0) {
                 *,
                 usersData!posts_post_id_user_fkey (
                     displayName,
-                    user_id_reg
+                    user_id_reg,
+                    user_image_bucket
                 )
             `)
             .eq('post_id_user', userId)
@@ -105,7 +107,8 @@ async function getPostById(postId) {
                 *,
                 usersData!posts_post_id_user_fkey (
                     displayName,
-                    user_id_reg
+                    user_id_reg,
+                    user_image_bucket
                 )
             `)
             .eq('id', postId)
