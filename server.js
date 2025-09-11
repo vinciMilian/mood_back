@@ -29,7 +29,7 @@ const upload = multer({
 // Make upload available to routes
 app.upload = upload;
 
-// Middleware
+// CORS Middleware - MUST be before all routes
 app.use(cors({
   origin: ['http://localhost:3000', 'http://127.0.0.1:3000'],
   credentials: true,
@@ -37,13 +37,16 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-app.use('/api/auth/profile/upload-image', routes);
+// Handle preflight requests
+app.options('*', cors());
 
+// Body parsing middleware
 app.use(express.json());
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 // API Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/auth/profile/upload-image', routes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
