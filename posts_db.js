@@ -46,8 +46,7 @@ async function getPosts(limit = 10, offset = 0) {
                 usersData!posts_post_id_user_fkey (
                     displayName,
                     user_id_reg,
-                    user_image_bucket,
-                    user_email
+                    user_image_bucket
                 )
             `)
             .eq('is_pinned', true)
@@ -65,8 +64,7 @@ async function getPosts(limit = 10, offset = 0) {
                 usersData!posts_post_id_user_fkey (
                     displayName,
                     user_id_reg,
-                    user_image_bucket,
-                    user_email
+                    user_image_bucket
                 )
             `)
             .eq('is_pinned', false)
