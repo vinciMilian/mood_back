@@ -197,6 +197,24 @@ router.get('/test/profile/:userId', (req, res) => {
     });
 });
 
+// Test CORS endpoint
+router.get('/test/cors', (req, res) => {
+    res.json({ 
+        message: 'CORS test endpoint working', 
+        origin: req.headers.origin,
+        timestamp: new Date().toISOString()
+    });
+});
+
+// Simple test endpoint for posts
+router.get('/test/posts', (req, res) => {
+    res.json({ 
+        message: 'Posts test endpoint working', 
+        origin: req.headers.origin,
+        timestamp: new Date().toISOString()
+    });
+});
+
 // Sign up route
 router.post('/signup', async (req, res) => {
     try {
