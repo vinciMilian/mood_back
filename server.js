@@ -3,7 +3,6 @@ const cors = require('cors');
 const multer = require('multer');
 require('dotenv').config();
 
-const authRoutes = require('./routes');
 const routes = require('./routes');
 
 const app = express();
@@ -30,8 +29,15 @@ const upload = multer({
 app.upload = upload;
 
 // CORS Middleware - MUST be before all routes
+const allowedOrigins = [
+  'http://localhost:3000', 
+  'http://127.0.0.1:3000',
+  'https://mood-front.vercel.app', // Frontend production URL
+  process.env.FRONTEND_URL // Allow custom frontend URL from environment
+].filter(Boolean); // Remove undefined values
+
 app.use(cors({
-  origin: ['http://localhost:3000', 'http://127.0.0.1:3000'],
+  origin: allowedOrigins,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
@@ -45,8 +51,7 @@ app.use(express.json());
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 // API Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/auth/profile/upload-image', routes);
+app.use('/api/auth', routes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {

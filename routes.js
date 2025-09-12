@@ -187,6 +187,16 @@ router.get('/test/basic', (req, res) => {
     res.json({ message: 'Basic test working' });
 });
 
+// Test profile endpoint
+router.get('/test/profile/:userId', (req, res) => {
+    const { userId } = req.params;
+    res.json({ 
+        message: 'Profile test endpoint working', 
+        userId: userId,
+        timestamp: new Date().toISOString()
+    });
+});
+
 // Sign up route
 router.post('/signup', async (req, res) => {
     try {
@@ -664,8 +674,10 @@ router.delete('/user-data/:userId', async (req, res) => {
 router.get('/profile/:userId', async (req, res) => {
     try {
         const { userId } = req.params;
+        console.log('Profile route called with userId:', userId);
         
         const result = await getUserData(userId);
+        console.log('getUserData result:', result);
         
         if (result.error) {
             return res.status(404).json({
