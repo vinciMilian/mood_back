@@ -995,7 +995,7 @@ router.get('/profile/image/:fileName', async (req, res) => {
 router.get('/posts', async (req, res) => {
     try {
         console.log('Posts endpoint called with query:', req.query);
-        const { limit = 10, offset = 0 } = req.query;
+        const { limit = 20, offset = 0 } = req.query;
         
         const result = await getPosts(parseInt(limit), parseInt(offset));
         console.log('getPosts result:', result);
