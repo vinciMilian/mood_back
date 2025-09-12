@@ -215,6 +215,90 @@ router.get('/test/posts', (req, res) => {
     });
 });
 
+// Test endpoint that mimics the posts endpoint structure
+router.get('/test/posts-simple', (req, res) => {
+    res.json({ 
+        success: true,
+        data: [
+            {
+                id: 1,
+                description: 'Test post 1',
+                created_at: new Date().toISOString()
+            },
+            {
+                id: 2,
+                description: 'Test post 2',
+                created_at: new Date().toISOString()
+            }
+        ],
+        message: 'Test posts endpoint working',
+        origin: req.headers.origin
+    });
+});
+
+// Simplified posts endpoint for testing
+router.get('/test/posts-feed', (req, res) => {
+    const { limit = 10, offset = 0 } = req.query;
+    console.log('Test posts feed called with:', { limit, offset });
+    
+    res.json({
+        success: true,
+        data: [
+            {
+                id: 1,
+                description: 'Test post 1',
+                likes: 5,
+                comments: 2,
+                created_at: new Date().toISOString(),
+                usersData: {
+                    displayName: 'Test User 1',
+                    user_id_reg: 'test-user-1'
+                }
+            },
+            {
+                id: 2,
+                description: 'Test post 2',
+                likes: 3,
+                comments: 1,
+                created_at: new Date().toISOString(),
+                usersData: {
+                    displayName: 'Test User 2',
+                    user_id_reg: 'test-user-2'
+                }
+            }
+        ],
+        pagination: {
+            limit: parseInt(limit),
+            offset: parseInt(offset),
+            hasMore: false
+        },
+        origin: req.headers.origin
+    });
+});
+
+// Simplified trending posts endpoint for testing
+router.get('/test/posts-trending', (req, res) => {
+    const { limit = 5 } = req.query;
+    console.log('Test trending posts called with:', { limit });
+    
+    res.json({
+        success: true,
+        data: [
+            {
+                id: 1,
+                description: 'Trending post 1',
+                likes: 10,
+                created_at: new Date().toISOString(),
+                usersData: {
+                    displayName: 'Trending User 1',
+                    user_id_reg: 'trending-user-1'
+                }
+            }
+        ],
+        origin: req.headers.origin
+    });
+});
+
 // Sign up route
 router.post('/signup', async (req, res) => {
     try {
@@ -888,9 +972,11 @@ router.get('/profile/image/:fileName', async (req, res) => {
 // Get posts with pagination
 router.get('/posts', async (req, res) => {
     try {
+        console.log('Posts endpoint called with query:', req.query);
         const { limit = 10, offset = 0 } = req.query;
         
         const result = await getPosts(parseInt(limit), parseInt(offset));
+        console.log('getPosts result:', result);
         
         if (result.error) {
             return res.status(500).json({
@@ -1018,11 +1104,13 @@ router.post('/posts', async (req, res) => {
 // Get trending posts (most liked) - needs to be BEFORE '/posts/:postId'
 router.get('/posts/trending', async (req, res) => {
     try {
+        console.log('Trending posts endpoint called with query:', req.query);
         let { limit = 5 } = req.query;
         limit = parseInt(limit);
         if (isNaN(limit) || limit <= 0) {
             limit = 5;
         }
+        console.log('Trending posts limit:', limit);
         const { data, error } = await supabase
             .from('posts')
             .select(`

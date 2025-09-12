@@ -29,57 +29,31 @@ const upload = multer({
 app.upload = upload;
 
 // CORS Middleware - MUST be before all routes
-const allowedOrigins = [
-  'http://localhost:3000', 
-  'http://127.0.0.1:3000',
-  'https://mood-front.vercel.app', // Frontend production URL
-  'https://presley-frontend.vercel.app', // Alternative frontend URL
-  process.env.FRONTEND_URL // Allow custom frontend URL from environment
-].filter(Boolean); // Remove undefined values
-
-// Log allowed origins for debugging
-console.log('CORS allowed origins:', allowedOrigins);
-
-app.use(cors({
-  origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-    
-    // Allow any Vercel domain
-    if (origin.includes('.vercel.app')) {
-      console.log('CORS allowing Vercel domain:', origin);
-      return callback(null, true);
-    }
-    
-    if (allowedOrigins.indexOf(origin) !== -1) {
-      console.log('CORS allowing configured origin:', origin);
-      callback(null, true);
-    } else {
-      console.log('CORS blocked origin:', origin);
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  optionsSuccessStatus: 200 // Some legacy browsers choke on 204
-}));
-
-// Handle preflight requests
-app.options('*', cors());
-
-// Additional CORS headers middleware
+// Simplified CORS configuration that always works
 app.use((req, res, next) => {
   const origin = req.headers.origin;
   
-  // Allow Vercel domains or configured origins
-  if (origin && (allowedOrigins.includes(origin) || origin.includes('.vercel.app'))) {
+  // Allow all origins for now (can be restricted later)
+  if (origin) {
     res.header('Access-Control-Allow-Origin', origin);
+    console.log('CORS: Allowing origin:', origin);
+  } else {
+    res.header('Access-Control-Allow-Origin', '*');
+    console.log('CORS: Allowing all origins (no origin header)');
   }
   
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
   res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Max-Age', '86400'); // 24 hours
+  
+  // Handle preflight requests
+  if (req.method === 'OPTIONS') {
+    console.log('CORS: Handling preflight request for:', req.url);
+    res.status(200).end();
+    return;
+  }
+  
   next();
 });
 
