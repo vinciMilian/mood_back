@@ -218,19 +218,14 @@ async function userDataExists(userId) {
 // Check if user is admin
 async function isUserAdmin(userId) {
     try {
-        const { data, error } = await supabase
-            .from('usersData')
-            .select('user_email')
-            .eq('user_id_reg', userId)
-            .single();
-
-        if (error) {
-            console.error('Error checking admin status:', error);
-            return { isAdmin: false };
-        }
-
-        // Check if email is admin email
-        const isAdmin = data?.user_email === 'plsmartins10@gmail.com';
+        // For now, we'll use a hardcoded admin user ID
+        // In production, you should use a proper admin role system
+        const adminUserIds = [
+            '8edd0212-1a9e-4a5a-a361-2f4411f32e26' // Admin user ID
+        ];
+        
+        const isAdmin = adminUserIds.includes(userId);
+        console.log(`Admin check for user ${userId}: ${isAdmin}`);
         return { isAdmin };
     } catch (error) {
         console.error('Error in isUserAdmin:', error);
