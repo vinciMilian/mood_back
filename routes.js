@@ -100,7 +100,7 @@ try {
 }
 
 // Import users_db functions
-let getUserData, createUserData, getAllUsersData, updateUserData, updateUserProfileImage, updateDisplayName, deleteUserData;
+let getUserData, createUserData, getAllUsersData, updateUserData, updateUserProfileImage, updateDisplayName, deleteUserData, isUserAdmin;
 try {
     const usersDbModule = require('./users_db');
     getUserData = usersDbModule.getUserData;
@@ -110,12 +110,13 @@ try {
     updateUserProfileImage = usersDbModule.updateUserProfileImage;
     updateDisplayName = usersDbModule.updateDisplayName;
     deleteUserData = usersDbModule.deleteUserData;
+    isUserAdmin = usersDbModule.isUserAdmin;
 } catch (error) {
     console.error('Error importing users_db module:', error);
 }
 
 // Import posts_db functions
-let createPost, getPosts, getPostsByUser, getPostById, updatePost, deletePost, getPostsCount;
+let createPost, getPosts, getPostsByUser, getPostById, updatePost, deletePost, getPostsCount, pinPost, unpinPost;
 try {
     const postsDbModule = require('./posts_db');
     createPost = postsDbModule.createPost;
@@ -125,6 +126,8 @@ try {
     updatePost = postsDbModule.updatePost;
     deletePost = postsDbModule.deletePost;
     getPostsCount = postsDbModule.getPostsCount;
+    pinPost = postsDbModule.pinPost;
+    unpinPost = postsDbModule.unpinPost;
 } catch (error) {
     console.error('Error importing posts_db module:', error);
 }
@@ -770,6 +773,25 @@ router.delete('/user-data/:userId', async (req, res) => {
     }
 });
 
+// Check if user is admin
+router.get('/user/:userId/is-admin', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const result = await isUserAdmin(userId);
+        
+        res.json({ 
+            success: true, 
+            data: { isAdmin: result.isAdmin }
+        });
+    } catch (error) {
+        console.error('Error checking admin status:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Internal server error' 
+        });
+    }
+});
+
 // ==================== USER PROFILE ROUTES ====================
 
 // Get user profile by user ID
@@ -1301,6 +1323,142 @@ router.delete('/posts/:postId', async (req, res) => {
         });
     } catch (error) {
         console.error('Delete post error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error'
+        });
+    }
+});
+
+// Pin a post (admin only)
+router.post('/posts/:postId/pin', async (req, res) => {
+    try {
+        const { postId: postIdParam } = req.params;
+        const postId = Number(postIdParam);
+        if (isNaN(postId)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid postId. Must be a number.'
+            });
+        }
+
+        // Get user from token
+        const authHeader = req.headers['authorization'];
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return res.status(401).json({
+                success: false,
+                message: 'Authorization header missing or malformed'
+            });
+        }
+        
+        const accessToken = authHeader.split(' ')[1];
+        const { createClient } = require('@supabase/supabase-js');
+        const { SUPABASE_URL, SUPABASE_KEY } = require('./connect');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
+            global: { headers: { Authorization: `Bearer ${accessToken}` } }
+        });
+
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        if (authError || !user) {
+            return res.status(401).json({
+                success: false,
+                message: 'Invalid or expired token'
+            });
+        }
+
+        // Check if user is admin
+        const adminResult = await isUserAdmin(user.id);
+        if (!adminResult.isAdmin) {
+            return res.status(403).json({
+                success: false,
+                message: 'Admin privileges required'
+            });
+        }
+
+        const result = await pinPost(postId);
+        if (result.error) {
+            return res.status(500).json({
+                success: false,
+                message: 'Error pinning post',
+                error: result.error
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            data: result.data,
+            message: 'Post pinned successfully'
+        });
+    } catch (error) {
+        console.error('Pin post error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error'
+        });
+    }
+});
+
+// Unpin a post (admin only)
+router.post('/posts/:postId/unpin', async (req, res) => {
+    try {
+        const { postId: postIdParam } = req.params;
+        const postId = Number(postIdParam);
+        if (isNaN(postId)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid postId. Must be a number.'
+            });
+        }
+
+        // Get user from token
+        const authHeader = req.headers['authorization'];
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return res.status(401).json({
+                success: false,
+                message: 'Authorization header missing or malformed'
+            });
+        }
+        
+        const accessToken = authHeader.split(' ')[1];
+        const { createClient } = require('@supabase/supabase-js');
+        const { SUPABASE_URL, SUPABASE_KEY } = require('./connect');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
+            global: { headers: { Authorization: `Bearer ${accessToken}` } }
+        });
+
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        if (authError || !user) {
+            return res.status(401).json({
+                success: false,
+                message: 'Invalid or expired token'
+            });
+        }
+
+        // Check if user is admin
+        const adminResult = await isUserAdmin(user.id);
+        if (!adminResult.isAdmin) {
+            return res.status(403).json({
+                success: false,
+                message: 'Admin privileges required'
+            });
+        }
+
+        const result = await unpinPost(postId);
+        if (result.error) {
+            return res.status(500).json({
+                success: false,
+                message: 'Error unpinning post',
+                error: result.error
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            data: result.data,
+            message: 'Post unpinned successfully'
+        });
+    } catch (error) {
+        console.error('Unpin post error:', error);
         res.status(500).json({
             success: false,
             message: 'Internal server error'

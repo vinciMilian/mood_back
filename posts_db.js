@@ -38,26 +38,51 @@ async function getPosts(limit = 10, offset = 0) {
     try {
         console.log('Fetching posts:', { limit, offset });
         
-        const { data, error } = await supabase
+        // First get pinned posts
+        const { data: pinnedPosts, error: pinnedError } = await supabase
             .from('posts')
             .select(`
                 *,
                 usersData!posts_post_id_user_fkey (
                     displayName,
                     user_id_reg,
-                    user_image_bucket
+                    user_image_bucket,
+                    user_email
                 )
             `)
+            .eq('is_pinned', true)
+            .order('created_at', { ascending: false });
+
+        if (pinnedError) {
+            console.error('Error fetching pinned posts:', pinnedError);
+        }
+
+        // Then get regular posts
+        const { data: regularPosts, error: regularError } = await supabase
+            .from('posts')
+            .select(`
+                *,
+                usersData!posts_post_id_user_fkey (
+                    displayName,
+                    user_id_reg,
+                    user_image_bucket,
+                    user_email
+                )
+            `)
+            .eq('is_pinned', false)
             .order('created_at', { ascending: false })
             .range(offset, offset + limit - 1);
 
-        if (error) {
-            console.error('Error fetching posts:', error);
-            return { error };
+        if (regularError) {
+            console.error('Error fetching regular posts:', regularError);
+            return { error: regularError };
         }
 
-        console.log(`Fetched ${data.length} posts`);
-        return { data };
+        // Combine pinned posts first, then regular posts
+        const allPosts = [...(pinnedPosts || []), ...(regularPosts || [])];
+        
+        console.log(`Fetched ${allPosts.length} posts (${pinnedPosts?.length || 0} pinned, ${regularPosts?.length || 0} regular)`);
+        return { data: allPosts };
     } catch (error) {
         console.error('Error in getPosts:', error);
         return { error };
@@ -211,6 +236,50 @@ async function getPostsCount() {
     }
 }
 
+// Pin a post (admin only)
+async function pinPost(postId) {
+    try {
+        const { data, error } = await supabase
+            .from('posts')
+            .update({ is_pinned: true })
+            .eq('id', postId)
+            .select()
+            .single();
+
+        if (error) {
+            console.error('Error pinning post:', error);
+            return { error };
+        }
+
+        return { data };
+    } catch (error) {
+        console.error('Error in pinPost:', error);
+        return { error };
+    }
+}
+
+// Unpin a post (admin only)
+async function unpinPost(postId) {
+    try {
+        const { data, error } = await supabase
+            .from('posts')
+            .update({ is_pinned: false })
+            .eq('id', postId)
+            .select()
+            .single();
+
+        if (error) {
+            console.error('Error unpinning post:', error);
+            return { error };
+        }
+
+        return { data };
+    } catch (error) {
+        console.error('Error in unpinPost:', error);
+        return { error };
+    }
+}
+
 module.exports = {
     createPost,
     getPosts,
@@ -218,5 +287,7 @@ module.exports = {
     getPostById,
     updatePost,
     deletePost,
-    getPostsCount
+    getPostsCount,
+    pinPost,
+    unpinPost
 };

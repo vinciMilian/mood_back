@@ -215,6 +215,29 @@ async function userDataExists(userId) {
     }
 }
 
+// Check if user is admin
+async function isUserAdmin(userId) {
+    try {
+        const { data, error } = await supabase
+            .from('usersData')
+            .select('user_email')
+            .eq('user_id_reg', userId)
+            .single();
+
+        if (error) {
+            console.error('Error checking admin status:', error);
+            return { isAdmin: false };
+        }
+
+        // Check if email is admin email
+        const isAdmin = data?.user_email === 'plsmartins10@gmail.com';
+        return { isAdmin };
+    } catch (error) {
+        console.error('Error in isUserAdmin:', error);
+        return { isAdmin: false };
+    }
+}
+
 module.exports = {
     createUserData,
     getUserData,
@@ -224,5 +247,6 @@ module.exports = {
     getUserDataById,
     updateDisplayName,
     deleteUserData,
-    userDataExists
+    userDataExists,
+    isUserAdmin
 };
